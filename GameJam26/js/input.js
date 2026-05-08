@@ -79,21 +79,21 @@ export class InputManager {
         return { dx, dy };
     }
 
-    // Player 1 actions
-    p1Interact()  { return this.isJustPressed('KeyE'); }
-    p1Toss()      { return this.isJustPressed('KeyQ'); }
-    p1Craft()     { return this.isJustPressed('KeyF'); }
-    p1Process()   { return this.isJustPressed('KeyR'); }
-    p1Drop()      { return this.isJustPressed('Tab'); }
+    // Player 1 actions (Blue)
+    p1Interact()  { return this.isJustPressed('KeyE'); }       // Context-sensitive interact
+    p1Toss()      { return this.isJustPressed('KeyQ'); }       // Toss item to hub
+    p1Craft()     { return this.isJustPressed('KeyF'); }       // Build at crafter
+    p1Process()   { return this.isJustPressed('KeyR'); }       // Open process menu
+    p1Drop()      { return this.isJustPressed('Tab'); }        // Pickup/drop alien
     p1CycleLeft() { return this.isJustPressed('Digit1'); }
     p1CycleRight(){ return this.isJustPressed('Digit2'); }
 
-    // Player 2 actions
-    p2Interact()  { return this.isJustPressed('Slash') || this.isJustPressed('Enter'); }
-    p2Toss()      { return this.isJustPressed('Period'); }
-    p2Craft()     { return this.isJustPressed('Comma'); }
-    p2Process()   { return this.isJustPressed('KeyM'); }
-    p2Drop()      { return this.isJustPressed('ShiftRight'); }
+    // Player 2 actions (Red) 
+    p2Interact()  { return this.isJustPressed('Slash') || this.isJustPressed('Enter'); } // Context-sensitive interact
+    p2Toss()      { return this.isJustPressed('Period'); }     // Toss item to hub
+    p2Craft()     { return this.isJustPressed('Comma'); }      // Build at crafter
+    p2Process()   { return this.isJustPressed('KeyM'); }       // Open process menu
+    p2Drop()      { return this.isJustPressed('ShiftRight'); } // Pickup/drop alien
     p2CycleLeft() { return this.isJustPressed('Digit7'); }
     p2CycleRight(){ return this.isJustPressed('Digit8'); }
 

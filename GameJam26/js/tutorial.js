@@ -8,13 +8,16 @@ const STEPS = [
     { id:'intro1', type:'story', text:['Long ago, the flat worlds drifted peacefully through the cosmic void...'], duration:3500 },
     { id:'intro2', type:'story', text:['Until a rogue asteroid field tore through the galaxy, scattering debris everywhere.'], duration:3500 },
     { id:'intro3', type:'story', text:['Two species crash-landed on opposite sides of a cluster of flat islands.'], duration:3500 },
-    { id:'intro4', type:'story', text:['Between them lies a shared center island. Build civilization there to survive.'], duration:3500 },
-    { id:'intro5', type:'story', text:['5 METEOR SHOWERS approach. The final one will destroy your home worlds forever.'], duration:4000 },
+    { id:'intro4', type:'story', text:['Between them lies a shared center island. Build defenses there to survive!'], duration:3500 },
+    { id:'intro5', type:'story', text:['5 METEOR SHOWERS approach. The final one will DESTROY your home worlds!'], duration:4000 },
+    { id:'intro6', type:'story', text:['Your people roam the planets. Feed them at the Feeder buildings, and rescue them before each shower!'], duration:4500 },
     { id:'move', type:'action', text:['Use WASD (P1) or Arrows (P2) to move around!'], hint:'Move in any direction', check:(g) => g.p1Moved },
-    { id:'harvest', type:'action', text:['Walk near a glowing node and press E to harvest!'], hint:'Press E near a resource', check:(g) => g.p1Harvested },
+    { id:'harvest', type:'action', text:['Walk near a glowing node and press E (P1) or Enter (P2) to harvest!'], hint:'Press E near a resource', check:(g) => g.p1Harvested },
     { id:'toss', type:'action', text:['Press Q to toss materials toward the hub island!'], hint:'Press Q with an item', check:(g) => g.p1Tossed },
-    { id:'craft', type:'action', text:['Go to the Crafter on the hub and press F to build!'], hint:'Press F at the Crafter', check:(g) => g.p1Crafted },
-    { id:'done', type:'story', text:['You\'re ready! Build defenses and sustainability. Work together. Good luck!'], duration:3000 },
+    { id:'craft', type:'action', text:['Go to the Crafter on the hub and press F to build structures!'], hint:'Press F at the Crafter', check:(g) => g.p1Crafted },
+    { id:'feed', type:'story', text:['Visit the Feeder on your planet. Press E with Fiber (blue) or Coal (red) to feed your people!'], duration:4500 },
+    { id:'rescue', type:'story', text:['Before each shower, press Tab (P1) or Shift (P2) to carry aliens to the hub for safety!'], duration:4500 },
+    { id:'done', type:'story', text:['You are ready! Build defenses, feed your people, rescue everyone. Good luck out there!'], duration:3000 },
 ];
 
 // Tiny AudioContext beep for typewriter

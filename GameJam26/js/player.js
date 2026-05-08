@@ -61,10 +61,15 @@ export class Player {
         this.pushbackVX = 0;
         this.pushbackVY = 0;
         this.denyCooldown = 0;
+
+        // Alien carry
+        this.carriedAlien = null;
+        this.speedMultiplier = 1.0; // hunger/debuff modifier
     }
 
     get speed() {
-        return this.speedBoosted ? PLAYER_SPEED_BOOSTED : PLAYER_SPEED;
+        const base = this.speedBoosted ? PLAYER_SPEED_BOOSTED : PLAYER_SPEED;
+        return base * this.speedMultiplier;
     }
 
     get currentItem() {
@@ -393,6 +398,30 @@ export class Player {
         ctx.strokeText(label, screen.x, drawY - 2 * z);
         ctx.fillText(label, screen.x, drawY - 2 * z);
         ctx.restore();
+
+        // Carried alien indicator (mini sprite on back)
+        if (this.carriedAlien) {
+            const az = z * 0.35;
+            const ax = screen.x + 8 * z;
+            const ay = drawY + 5 * z + Math.sin(this.bobTimer * 1.5) * 2 * z;
+            // Mini body
+            ctx.fillStyle = this.carriedAlien.bodyColor;
+            ctx.beginPath();
+            ctx.roundRect(ax - 4 * az, ay - 2 * az, 8 * az, 10 * az, 2 * az);
+            ctx.fill();
+            // Mini head
+            ctx.beginPath();
+            ctx.arc(ax, ay - 4 * az, 4 * az, 0, Math.PI * 2);
+            ctx.fill();
+            // Visor
+            ctx.fillStyle = this.carriedAlien.eyeColor;
+            ctx.fillRect(ax - 2.5 * az, ay - 5 * az, 5 * az, 2 * az);
+            // "!" indicator
+            ctx.fillStyle = '#FFDD44';
+            ctx.font = `${Math.floor(6 * z)}px "Press Start 2P"`;
+            ctx.textAlign = 'center';
+            ctx.fillText('!', ax, ay - 8 * az);
+        }
     }
 }
 

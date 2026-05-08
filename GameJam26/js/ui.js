@@ -38,15 +38,60 @@ export class UIManager {
         }
     }
 
-    drawHUD(ctx, progression, players, gameState, hubStockpile = {}) {
+    drawHUD(ctx, progression, players, gameState, hubStockpile = {}, alienPop = null) {
         this._drawBuildChecklist(ctx, progression, players, hubStockpile);
         this._drawDefenseBar(ctx, progression);
+        this._drawAlienStatus(ctx, alienPop, progression);
         this._drawInventory(ctx, players[0], 8, GAME_H - 80, 'left');
         this._drawInventory(ctx, players[1], GAME_W - 210, GAME_H - 80, 'right');
         this._drawShowerInfo(ctx, progression);
         this._drawNotifications(ctx);
         this._drawFloatingTexts(ctx);
         this._drawControls(ctx);
+    }
+
+    _drawAlienStatus(ctx, alienPop, progression) {
+        if (!alienPop) return;
+        const y = 82;  // Below defense bar
+        const gap = 11;
+        ctx.font = '7px "Press Start 2P"';
+
+        // Blue aliens
+        ctx.textAlign = 'left';
+        const bAlive = alienPop.blueAliveCount;
+        const bSafe = alienPop.blueSafeCount;
+        ctx.fillStyle = '#44BBDD';
+        ctx.fillText(`BLUE POP: ${bAlive}/5`, 12, y);
+        ctx.fillStyle = bSafe > 0 ? '#44FF88' : '#888';
+        ctx.fillText(`SAFE: ${bSafe}`, 12, y + gap);
+        // Hunger
+        const bH = alienPop.blueHunger;
+        const bFoodShake = bH === 0 ? Math.sin(Date.now() * 0.05) * 2 : 0;
+        ctx.fillStyle = bH > 50 ? '#44FF88' : bH > 25 ? '#FFAA44' : (bH === 0 && Math.floor(Date.now()/200)%2===0 ? '#FF0000' : '#FF4444');
+        ctx.fillText(`FOOD: ${Math.floor(bH)}%`, 12 + bFoodShake, y + gap * 2);
+
+        // Red aliens
+        ctx.textAlign = 'right';
+        const rAlive = alienPop.redAliveCount;
+        const rSafe = alienPop.redSafeCount;
+        ctx.fillStyle = '#DD5533';
+        ctx.fillText(`RED POP: ${rAlive}/5`, GAME_W - 12, y);
+        ctx.fillStyle = rSafe > 0 ? '#44FF88' : '#888';
+        ctx.fillText(`SAFE: ${rSafe}`, GAME_W - 12, y + gap);
+        // Hunger
+        const rH = alienPop.redHunger;
+        const rFoodShake = rH === 0 ? Math.sin(Date.now() * 0.05) * 2 : 0;
+        ctx.fillStyle = rH > 50 ? '#44FF88' : rH > 25 ? '#FFAA44' : (rH === 0 && Math.floor(Date.now()/200)%2===0 ? '#FF0000' : '#FF4444');
+        ctx.fillText(`FOOD: ${Math.floor(rH)}%`, GAME_W - 12 + rFoodShake, y + gap * 2);
+
+        // Rescue window indicator
+        if (progression.showerTimer <= 45000 && progression.showerTimer > 0) {
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFDD44';
+            ctx.font = '8px "Press Start 2P"';
+            const blink = Math.sin(Date.now() * 0.006) > 0;
+            if (blink) ctx.fillText('RESCUE WINDOW OPEN - CARRY ALIENS TO HUB!', GAME_W / 2, y + gap * 2);
+        }
     }
 
     _drawBuildChecklist(ctx, progression, players, hubStockpile = {}) {
@@ -99,7 +144,7 @@ export class UIManager {
     _drawDefenseBar(ctx, progression) {
         // Defense progress bar — shows survival readiness
         const barY = 60;
-        const barH = 6;
+        const barH = 8;
         const barX = 12;
         const barW = GAME_W - 24;
         const defPct = Math.min(1, progression.defenseScore / DEFENSE_THRESHOLD);
@@ -119,16 +164,13 @@ export class UIManager {
         ctx.fillStyle = susPct >= 1 ? '#44DDFF' : '#FFDD44';
         ctx.fillRect(barX + halfW + 4, barY, halfW * susPct, barH);
 
-        // Labels
+        // Percentage ON the bar
         ctx.font = '6px "Press Start 2P"';
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#999';
-        ctx.fillText(`DEF ${Math.floor(defPct * 100)}%`, barX + 2, barY + barH + 10);
-        ctx.textAlign = 'right';
-        ctx.fillText(`SUS ${Math.floor(susPct * 100)}%`, barX + barW - 2, barY + barH + 10);
         ctx.textAlign = 'center';
-        ctx.fillStyle = totalPct >= 1 ? '#44FF88' : '#AAA';
-        ctx.fillText(totalPct >= 1 ? '✓ SURVIVABLE' : `${Math.floor(totalPct * 100)}% Ready`, GAME_W / 2, barY + barH + 10);
+        ctx.fillStyle = '#FFF';
+        ctx.globalAlpha = 0.9;
+        ctx.fillText(`${Math.floor(totalPct * 100)}%`, GAME_W / 2, barY + barH - 1);
+        ctx.globalAlpha = 1;
     }
 
     _drawShowerInfo(ctx, progression) {
@@ -240,14 +282,14 @@ export class UIManager {
 
     _drawControls(ctx) {
         ctx.save();
-        ctx.font = '9px "Press Start 2P"';
+        ctx.font = '7px "Press Start 2P"';
         ctx.globalAlpha = 0.5;
         ctx.textAlign = 'left';
         ctx.fillStyle = '#88BBFF';
-        ctx.fillText('P1: WASD  E-Harvest  Q-Toss  F-Craft  R-Process', 8, GAME_H - 120);
+        ctx.fillText('P1: WASD  E-Interact  Q-Toss  F-Build  R-Process  Tab-Alien', 8, GAME_H - 125);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#FF8888';
-        ctx.fillText('P2: Arrows  /-Harvest  .-Toss  ,-Craft  M-Process', GAME_W - 8, GAME_H - 120);
+        ctx.fillText('P2: Arrows  Enter-Interact  .-Toss  ,-Build  M-Process  Shift-Alien', GAME_W - 8, GAME_H - 125);
         ctx.restore();
     }
 
@@ -552,10 +594,10 @@ export class UIManager {
             'Two alien species crash-landed on',
             'floating flat worlds in the void.',
             'A center island is their only hope.',
-            'Build civilization together. Survive',
-            '5 meteor showers. The final one will',
-            'destroy your worlds... but you might',
-            'just live on together.',
+            'Build defenses. Feed your people.',
+            'Rescue aliens before each shower!',
+            'The final meteor storm will destroy',
+            'your worlds. Save everyone to win.',
         ];
         for (let i = 0; i < storyLines.length; i++) {
             ctx.fillText(storyLines[i], leftX + 14, cardY + 38 + i * 13);
@@ -575,13 +617,13 @@ export class UIManager {
         ctx.fillStyle = '#4488FF';
         ctx.fillText('P1 (Blue)', rightX + 14, cardY + 40);
         ctx.fillStyle = '#7799CC';
-        ctx.fillText('WASD  E-Harvest  Q-Toss', rightX + 14, cardY + 55);
-        ctx.fillText('F-Build  R-Process', rightX + 14, cardY + 68);
+        ctx.fillText('WASD  E-Interact  Q-Toss', rightX + 14, cardY + 55);
+        ctx.fillText('F-Build  R-Process  Tab-Alien', rightX + 14, cardY + 68);
         ctx.fillStyle = '#FF5544';
         ctx.fillText('P2 (Red)', rightX + 14, cardY + 88);
         ctx.fillStyle = '#CC8877';
-        ctx.fillText('Arrows  /-Harvest  .-Toss', rightX + 14, cardY + 103);
-        ctx.fillText(',-Build  M-Process  Enter', rightX + 14, cardY + 116);
+        ctx.fillText('Arrows  Enter-Interact  .-Toss', rightX + 14, cardY + 103);
+        ctx.fillText(',-Build  M-Process  Shift-Alien', rightX + 14, cardY + 116);
 
         // Start prompt
         const blink = Math.sin(time * 0.005) > 0;

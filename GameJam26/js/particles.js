@@ -413,6 +413,21 @@ export class ParticleSystem {
         }
     }
 
+    // Trailing sparks from a falling meteor
+    emitMeteorTrail(x, y) {
+        if (Math.random() > 0.6) return; // 60% chance each call
+        this.add(new Particle(
+            x + randRange(-4, 4), y + randRange(-2, 2),
+            randRange(-2, 2), randRange(-1, 3),
+            `hsl(${randRange(10, 45)}, 100%, ${randRange(50, 80)}%)`,
+            randRange(2, 4),
+            randRange(200, 500),
+            0.08,
+            0.92,
+            'circle'
+        ));
+    }
+
     // World-space toss trail — uses worldParticles so it works in split screen
     emitTossTrailWorld(isoX, isoY, color, count = 1) {
         for (let i = 0; i < count; i++) {
