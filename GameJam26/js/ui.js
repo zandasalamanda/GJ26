@@ -1,8 +1,9 @@
 // ============================================
-// ALIEN ASSEMBLY LINE — UI System
+// FLAT-EARTHRZ — UI System
 // ============================================
 
-import { GAME_W, GAME_H, PALETTE, MAT_NAMES, MAT_COLORS, PLAYER_INVENTORY_SIZE, formatTime, CONSTRUCTION_RECIPES, PROCESSING_RECIPES, TOTAL_ROUNDS } from './utils.js';
+import { GAME_W, GAME_H, PALETTE, MAT_NAMES, MAT_COLORS, PLAYER_INVENTORY_SIZE, formatTime, PROCESSING_RECIPES } from './utils.js';
+import { BUILD_STAGES, TOTAL_SHOWERS, DIFFICULTY, DEFENSE_THRESHOLD, SUSTAIN_THRESHOLD } from './progression.js';
 
 export class UIManager {
     constructor(sprites) {
@@ -37,80 +38,110 @@ export class UIManager {
         }
     }
 
-    drawHUD(ctx, orderManager, players, gameState) {
-        this._drawOrderBar(ctx, orderManager);
+    drawHUD(ctx, progression, players, gameState, hubStockpile = {}) {
+        this._drawBuildChecklist(ctx, progression, players, hubStockpile);
+        this._drawDefenseBar(ctx, progression);
         this._drawInventory(ctx, players[0], 8, GAME_H - 80, 'left');
         this._drawInventory(ctx, players[1], GAME_W - 210, GAME_H - 80, 'right');
-        this._drawStarCounter(ctx, orderManager);
-        if (orderManager.combo >= 2) this._drawCombo(ctx, orderManager.combo);
+        this._drawShowerInfo(ctx, progression);
         this._drawNotifications(ctx);
         this._drawFloatingTexts(ctx);
         this._drawControls(ctx);
     }
 
-    _drawOrderBar(ctx, orderManager) {
-        const order = orderManager.currentOrder;
-        if (!order) return;
-
+    _drawBuildChecklist(ctx, progression, players, hubStockpile = {}) {
+        const build = progression.getCurrentBuild();
         ctx.fillStyle = 'rgba(10,10,30,0.85)';
-        ctx.fillRect(0, 0, GAME_W, 60);
+        ctx.fillRect(0, 0, GAME_W, 56);
         ctx.fillStyle = PALETTE.ui.panelEdge;
-        ctx.fillRect(0, 60, GAME_W, 2);
+        ctx.fillRect(0, 56, GAME_W, 2);
 
-        ctx.font = '14px "Press Start 2P"';
-        ctx.fillStyle = order.isRush ? '#FFD700' : '#FFF';
+        if (!build) {
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillStyle = '#00FFAA';
+            ctx.textAlign = 'center';
+            ctx.fillText('ALL STRUCTURES BUILT! Prepare for final shower!', GAME_W / 2, 30);
+            return;
+        }
+
+        // Build name
+        ctx.font = '11px "Press Start 2P"';
         ctx.textAlign = 'left';
-        const prefix = order.isRush ? '⚡ RUSH: ' : '';
-        ctx.fillText(`${prefix}${order.itemName}`, 12, 24);
+        ctx.fillStyle = '#00FFAA';
+        ctx.fillText(`BUILD: ${build.name}`, 12, 18);
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillStyle = '#888';
+        ctx.fillText(build.desc, 12, 34);
 
-        ctx.fillStyle = PALETTE.ui.accent1;
-        ctx.fillText(`${order.delivered}/${order.quantity}`, 12, 48);
-
-        const pipX = 160;
-        for (let i = 0; i < order.quantity; i++) {
-            ctx.fillStyle = i < order.delivered ? PALETTE.ui.accent1 : '#333';
-            ctx.fillRect(pipX + i * 20, 38, 16, 10);
+        // Material checklist — from hub stockpile
+        let matX = 12;
+        ctx.font = '8px "Press Start 2P"';
+        for (const [mat, qty] of Object.entries(build.recipe)) {
+            const have = hubStockpile[mat] || 0;
+            const done = have >= qty;
+            ctx.fillStyle = done ? '#00FF88' : '#FF6644';
+            const label = `${done ? '✓' : '✗'} ${MAT_NAMES[mat] || mat}: ${have}/${qty}`;
+            ctx.fillText(label, matX, 50);
+            matX += ctx.measureText(label).width + 16;
         }
 
-        const timerW = 360;
-        const timerX = GAME_W / 2 - timerW / 2 + 80;
-        ctx.fillStyle = '#222';
-        ctx.fillRect(timerX, 14, timerW, 14);
-        const ratio = order.timeRatio;
-        let timerColor = PALETTE.ui.accent1;
-        if (ratio < 0.5) timerColor = PALETTE.ui.warning;
-        if (ratio < 0.25) timerColor = PALETTE.ui.danger;
-        ctx.fillStyle = timerColor;
-        ctx.fillRect(timerX, 14, timerW * ratio, 14);
+        // Defense / Sustain scores on right
+        ctx.textAlign = 'right';
+        ctx.font = '9px "Press Start 2P"';
+        ctx.fillStyle = '#FF8844';
+        ctx.fillText(`DEF: ${progression.defenseScore}`, GAME_W - 12, 18);
+        ctx.fillStyle = '#44DD88';
+        ctx.fillText(`SUS: ${progression.sustainScore}`, GAME_W - 12, 34);
+        ctx.fillStyle = '#888';
+        ctx.fillText(`${progression.totalBuilt}/${BUILD_STAGES.length} built`, GAME_W - 12, 50);
+    }
 
-        ctx.font = '12px "Press Start 2P"';
-        ctx.fillStyle = order.urgent ? '#FF3333' : '#CCC';
+    _drawDefenseBar(ctx, progression) {
+        // Defense progress bar — shows survival readiness
+        const barY = 60;
+        const barH = 6;
+        const barX = 12;
+        const barW = GAME_W - 24;
+        const defPct = Math.min(1, progression.defenseScore / DEFENSE_THRESHOLD);
+        const susPct = Math.min(1, progression.sustainScore / SUSTAIN_THRESHOLD);
+        const totalPct = (defPct + susPct) / 2;
+
+        // Background
+        ctx.fillStyle = 'rgba(20,20,40,0.7)';
+        ctx.fillRect(barX, barY, barW, barH);
+
+        // Defense half (left)
+        const halfW = barW / 2 - 2;
+        ctx.fillStyle = defPct >= 1 ? '#44FF88' : '#FF8844';
+        ctx.fillRect(barX, barY, halfW * defPct, barH);
+
+        // Sustain half (right)
+        ctx.fillStyle = susPct >= 1 ? '#44DDFF' : '#FFDD44';
+        ctx.fillRect(barX + halfW + 4, barY, halfW * susPct, barH);
+
+        // Labels
+        ctx.font = '6px "Press Start 2P"';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#999';
+        ctx.fillText(`DEF ${Math.floor(defPct * 100)}%`, barX + 2, barY + barH + 10);
+        ctx.textAlign = 'right';
+        ctx.fillText(`SUS ${Math.floor(susPct * 100)}%`, barX + barW - 2, barY + barH + 10);
         ctx.textAlign = 'center';
-        ctx.fillText(formatTime(order.timeRemaining), timerX + timerW / 2, 48);
+        ctx.fillStyle = totalPct >= 1 ? '#44FF88' : '#AAA';
+        ctx.fillText(totalPct >= 1 ? '✓ SURVIVABLE' : `${Math.floor(totalPct * 100)}% Ready`, GAME_W / 2, barY + barH + 10);
+    }
 
-        if (order.urgent) {
-            const pulse = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
-            ctx.strokeStyle = `rgba(255,50,50,${pulse})`;
-            ctx.lineWidth = 3;
-            ctx.strokeRect(1, 1, GAME_W - 2, 58);
-        }
-
-        const next = orderManager.nextOrderPreview;
-        if (next) {
-            ctx.font = '10px "Press Start 2P"';
-            ctx.fillStyle = '#777';
-            ctx.textAlign = 'right';
-            ctx.fillText(`NEXT: ${next.itemName} x${next.quantity}`, GAME_W - 12, 22);
-        }
-
-        const recipe = CONSTRUCTION_RECIPES.find(r => r.name === order.itemName);
-        if (recipe) {
-            ctx.font = '9px "Press Start 2P"';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#999';
-            const reqText = Object.entries(recipe.recipe).map(([m,q]) => `${q}×${(MAT_NAMES[m]||m).substring(0,6)}`).join('  ');
-            ctx.fillText(reqText, GAME_W - 12, 48);
-        }
+    _drawShowerInfo(ctx, progression) {
+        const x = GAME_W / 2;
+        const y = GAME_H - 18;
+        ctx.font = '10px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        // Shower countdown
+        const secsLeft = Math.ceil(progression.showerTimer / 1000);
+        const timeStr = formatTime(secsLeft);
+        const urgent = secsLeft < 30;
+        ctx.fillStyle = urgent ? '#FF4444' : '#FFDD44';
+        ctx.fillText(`☄ Shower ${progression.showerCount + 1}/${TOTAL_SHOWERS} in ${timeStr}`, x, y);
     }
 
     _drawInventory(ctx, player, x, y, align) {
@@ -379,115 +410,197 @@ export class UIManager {
     // ---- Screens ----
 
     drawTitleScreen(ctx, time) {
-        // Deep space background
-        ctx.fillStyle = '#040410';
+        // Deep space gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+        grad.addColorStop(0, '#060818');
+        grad.addColorStop(0.5, '#0a0a20');
+        grad.addColorStop(1, '#040410');
+        ctx.fillStyle = grad;
         ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-        // Stars with parallax
-        for (let i = 0; i < 120; i++) {
-            const speed = (i % 3 + 1) * 0.005;
-            const sx = (i * 137 + time * speed * 3) % GAME_W;
-            const sy = (i * 97 + Math.sin(time * 0.001 + i * 0.5) * 8) % GAME_H;
-            const brightness = Math.sin(time * 0.003 + i) * 40 + 80;
-            const size = i % 5 === 0 ? 3 : (i % 3 === 0 ? 2 : 1);
-            ctx.fillStyle = `rgba(${brightness + 60},${brightness + 40},${brightness + 100},${0.5 + Math.sin(time * 0.005 + i) * 0.3})`;
+        // Stars — multiple layers
+        for (let i = 0; i < 150; i++) {
+            const speed = (i % 3 + 1) * 0.004;
+            const sx = (i * 137 + time * speed * 2) % GAME_W;
+            const sy = (i * 97 + Math.sin(time * 0.001 + i * 0.5) * 6) % GAME_H;
+            const brightness = Math.sin(time * 0.003 + i) * 40 + 100;
+            const size = i % 7 === 0 ? 3 : (i % 3 === 0 ? 2 : 1);
+            ctx.fillStyle = `rgba(${brightness + 60},${brightness + 40},${brightness + 100},${0.4 + Math.sin(time * 0.005 + i) * 0.3})`;
             ctx.fillRect(Math.floor(sx), Math.floor(sy), size, size);
         }
 
-        // Floating flat islands in the background
-        const drawFlatIsland = (ix, iy, w, h, color, t) => {
-            const bob = Math.sin(t * 0.002 + ix * 0.1) * 8;
+        // Meteor streaks in background
+        for (let i = 0; i < 3; i++) {
+            const mt = (time * 0.3 + i * 2000) % 6000;
+            if (mt < 800) {
+                const mx = (i * 400 + 200) + mt * 0.8;
+                const my = 50 + i * 120 + mt * 0.3;
+                const alpha = 1 - mt / 800;
+                ctx.strokeStyle = `rgba(255,120,40,${alpha * 0.6})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(mx, my);
+                ctx.lineTo(mx - 40, my - 15);
+                ctx.stroke();
+                ctx.fillStyle = `rgba(255,200,80,${alpha})`;
+                ctx.beginPath();
+                ctx.arc(mx, my, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Three floating islands — larger and more detailed
+        const drawIsland = (ix, iy, w, h, color, edgeColor, t, label) => {
+            const bob = Math.sin(t * 0.0015 + ix * 0.08) * 10;
+            const y = iy + bob;
+            // Island body
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.moveTo(ix, iy + bob);
-            ctx.lineTo(ix + w / 2, iy - h + bob);
-            ctx.lineTo(ix + w, iy + bob);
-            ctx.lineTo(ix + w * 0.85, iy + h * 0.4 + bob);
-            ctx.lineTo(ix + w * 0.15, iy + h * 0.4 + bob);
+            ctx.moveTo(ix, y);
+            ctx.lineTo(ix + w / 2, y - h);
+            ctx.lineTo(ix + w, y);
+            ctx.lineTo(ix + w * 0.85, y + h * 0.5);
+            ctx.lineTo(ix + w * 0.15, y + h * 0.5);
             ctx.closePath();
             ctx.fill();
-            // Edge
-            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            // Edge shadow
+            ctx.fillStyle = edgeColor;
             ctx.beginPath();
-            ctx.moveTo(ix, iy + bob);
-            ctx.lineTo(ix + w * 0.15, iy + h * 0.4 + bob);
-            ctx.lineTo(ix + w * 0.85, iy + h * 0.4 + bob);
-            ctx.lineTo(ix + w, iy + bob);
+            ctx.moveTo(ix, y);
+            ctx.lineTo(ix + w * 0.15, y + h * 0.5);
+            ctx.lineTo(ix + w * 0.85, y + h * 0.5);
+            ctx.lineTo(ix + w, y);
             ctx.closePath();
             ctx.fill();
+            // Label
+            ctx.font = '7px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText(label, ix + w / 2, y - h - 6 + bob);
+            // Surface details — little shapes
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            for (let j = 0; j < 4; j++) {
+                const dx = w * 0.2 + j * w * 0.18;
+                const dy = -h * 0.3 + Math.sin(j * 2 + t * 0.001) * 3;
+                ctx.fillRect(ix + dx - 3, y + dy, 6, 4);
+            }
         };
-        drawFlatIsland(100, 460, 180, 60, '#2a5c5c', time);
-        drawFlatIsland(980, 420, 200, 70, '#6b3a2a', time + 1000);
-        drawFlatIsland(500, 500, 160, 50, '#4a4a3a', time + 2000);
+        drawIsland(50, 420, 220, 70, '#1a4a4a', '#0d2d2d', time, 'BLUE WORLD');
+        drawIsland(GAME_W - 290, 400, 240, 75, '#5a2a1a', '#3a1a0a', time + 1200, 'RED WORLD');
+        drawIsland(GAME_W / 2 - 100, 480, 200, 55, '#3a3a2a', '#2a2a1a', time + 600, 'THE HUB');
 
-        // Title with glow and animation
+        // Connecting lines (bridges hint)
+        ctx.strokeStyle = 'rgba(0,255,170,0.08)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 8]);
+        ctx.beginPath();
+        ctx.moveTo(250, 420);
+        ctx.lineTo(GAME_W / 2 - 60, 480);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(GAME_W - 100, 400);
+        ctx.lineTo(GAME_W / 2 + 60, 475);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // ---- Title ----
         ctx.save();
-        const scale = 1 + Math.sin(time * 0.002) * 0.04;
-        ctx.translate(GAME_W / 2, 180);
+        const scale = 1 + Math.sin(time * 0.002) * 0.03;
+        ctx.translate(GAME_W / 2, 110);
         ctx.scale(scale, scale);
-
-        // Title shadow
-        ctx.font = '44px "Press Start 2P"';
+        ctx.font = '48px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillText('FLAT-EARTHURZ', 3, 3);
-
-        // Main title with glow
+        ctx.fillText('FLAT-EARTHRZ', 3, 3);
         ctx.shadowColor = '#00FFAA';
-        ctx.shadowBlur = 25;
+        ctx.shadowBlur = 30;
         ctx.fillStyle = '#00FFAA';
-        ctx.fillText('FLAT-EARTHURZ', 0, 0);
-
-        // Second pass for extra glow
-        ctx.shadowBlur = 50;
-        ctx.globalAlpha = 0.4;
-        ctx.fillText('FLAT-EARTHURZ', 0, 0);
+        ctx.fillText('FLAT-EARTHRZ', 0, 0);
+        ctx.shadowBlur = 60;
+        ctx.globalAlpha = 0.3;
+        ctx.fillText('FLAT-EARTHRZ', 0, 0);
         ctx.globalAlpha = 1;
         ctx.shadowBlur = 0;
         ctx.restore();
 
-        // Subtitle
-        ctx.font = '12px "Press Start 2P"';
-        ctx.fillStyle = '#888';
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillStyle = '#557';
         ctx.textAlign = 'center';
-        ctx.fillText('Cooperative Flat World Construction', GAME_W / 2, 240);
+        ctx.fillText('A Cooperative Survival Story', GAME_W / 2, 152);
 
-        // Decorative line
-        const lineW = 300;
+        // ---- Two info cards side by side ----
+        const cardW = 380;
+        const cardH = 130;
+        const cardGap = 40;
+        const cardY = 185;
+        const leftX = GAME_W / 2 - cardGap / 2 - cardW;
+        const rightX = GAME_W / 2 + cardGap / 2;
+
+        // Left card — Story
+        ctx.fillStyle = 'rgba(0,20,30,0.7)';
+        ctx.fillRect(leftX, cardY, cardW, cardH);
         ctx.strokeStyle = '#00FFAA33';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(GAME_W / 2 - lineW, 260);
-        ctx.lineTo(GAME_W / 2 + lineW, 260);
-        ctx.stroke();
-
-        // Controls
-        ctx.font = '11px "Press Start 2P"';
-        ctx.fillStyle = '#4488FF';
-        ctx.fillText('Player 1 (Blue): WASD + E/Q/F/R', GAME_W / 2, 310);
-        ctx.fillStyle = '#FF4444';
-        ctx.fillText('Player 2 (Red): Arrows + / . , M', GAME_W / 2, 340);
-
-        // How to play
+        ctx.strokeRect(leftX, cardY, cardW, cardH);
         ctx.font = '9px "Press Start 2P"';
-        ctx.fillStyle = '#555';
-        ctx.fillText('Harvest resources • Toss between islands • Craft & Deliver!', GAME_W / 2, 390);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#00FFAA';
+        ctx.fillText('THE STORY', leftX + 14, cardY + 20);
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#8899AA';
+        const storyLines = [
+            'Two alien species crash-landed on',
+            'floating flat worlds in the void.',
+            'A center island is their only hope.',
+            'Build civilization together. Survive',
+            '5 meteor showers. The final one will',
+            'destroy your worlds... but you might',
+            'just live on together.',
+        ];
+        for (let i = 0; i < storyLines.length; i++) {
+            ctx.fillText(storyLines[i], leftX + 14, cardY + 38 + i * 13);
+        }
+
+        // Right card — Controls
+        ctx.fillStyle = 'rgba(20,0,20,0.7)';
+        ctx.fillRect(rightX, cardY, cardW, cardH);
+        ctx.strokeStyle = '#FFDD4433';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(rightX, cardY, cardW, cardH);
+        ctx.font = '9px "Press Start 2P"';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#FFDD44';
+        ctx.fillText('CONTROLS', rightX + 14, cardY + 20);
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#4488FF';
+        ctx.fillText('P1 (Blue)', rightX + 14, cardY + 40);
+        ctx.fillStyle = '#7799CC';
+        ctx.fillText('WASD  E-Harvest  Q-Toss', rightX + 14, cardY + 55);
+        ctx.fillText('F-Build  R-Process', rightX + 14, cardY + 68);
+        ctx.fillStyle = '#FF5544';
+        ctx.fillText('P2 (Red)', rightX + 14, cardY + 88);
+        ctx.fillStyle = '#CC8877';
+        ctx.fillText('Arrows  /-Harvest  .-Toss', rightX + 14, cardY + 103);
+        ctx.fillText(',-Build  M-Process  Enter', rightX + 14, cardY + 116);
 
         // Start prompt
         const blink = Math.sin(time * 0.005) > 0;
         if (blink) {
-            ctx.font = '16px "Press Start 2P"';
+            ctx.font = '14px "Press Start 2P"';
             ctx.fillStyle = '#FFF';
-            ctx.shadowColor = '#FFF';
-            ctx.shadowBlur = 10;
-            ctx.fillText('PRESS SPACE TO START', GAME_W / 2, 480);
+            ctx.shadowColor = '#00FFAA';
+            ctx.shadowBlur = 15;
+            ctx.textAlign = 'center';
+            ctx.fillText('PRESS SPACE TO START', GAME_W / 2, 365);
             ctx.shadowBlur = 0;
         }
 
-        ctx.font = '8px "Press Start 2P"';
-        ctx.fillStyle = '#333';
-        ctx.fillText('Game Jam 2026', GAME_W / 2, GAME_H - 16);
+        ctx.font = '7px "Press Start 2P"';
+        ctx.fillStyle = '#222';
+        ctx.textAlign = 'center';
+        ctx.fillText('Game Jam 2026', GAME_W / 2, GAME_H - 12);
     }
+
 
     drawPauseOverlay(ctx) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -501,63 +614,94 @@ export class UIManager {
         ctx.fillText('Press ESC to resume', GAME_W / 2, GAME_H / 2 + 20);
     }
 
-    drawRoundResults(ctx, summary, time) {
-        ctx.fillStyle = 'rgba(5,5,20,0.9)';
+    drawDifficultySelect(ctx, selectedIdx, diffKeys, time) {
+        ctx.fillStyle = '#040410';
         ctx.fillRect(0, 0, GAME_W, GAME_H);
-
         ctx.font = '20px "Press Start 2P"';
         ctx.textAlign = 'center';
-        ctx.fillStyle = PALETTE.ui.accent1;
-        ctx.fillText(`ROUND ${summary.round + 1} COMPLETE`, GAME_W / 2, 120);
-
-        ctx.font = '12px "Press Start 2P"';
-        ctx.fillStyle = '#CCC';
-        ctx.fillText(`Orders Completed: ${summary.completed}/${summary.totalOrders}`, GAME_W / 2, 200);
-        ctx.fillText(`Orders Failed: ${summary.failed}`, GAME_W / 2, 230);
-        ctx.fillText(`Max Combo: ${summary.maxCombo}x`, GAME_W / 2, 260);
-
-        ctx.fillStyle = PALETTE.ui.star;
-        ctx.font = '24px "Press Start 2P"';
-        ctx.fillText(`★ ${summary.totalStars}/${summary.maxStars}`, GAME_W / 2, 330);
-
-        const ratio = summary.totalStars / summary.maxStars;
-        let rating = 'D';
-        if (ratio >= 0.9) rating = 'S';
-        else if (ratio >= 0.7) rating = 'A';
-        else if (ratio >= 0.5) rating = 'B';
-        else if (ratio >= 0.3) rating = 'C';
-
-        ctx.font = '40px "Press Start 2P"';
-        ctx.fillStyle = rating === 'S' ? '#FFD700' : rating === 'A' ? '#00FFAA' : '#CCC';
-        ctx.fillText(rating, GAME_W / 2, 420);
-
-        const blink = Math.sin(time * 0.005) > 0;
-        if (blink) {
-            ctx.font = '12px "Press Start 2P"';
-            ctx.fillStyle = '#888';
-            ctx.fillText('Press SPACE to continue', GAME_W / 2, 530);
+        ctx.fillStyle = '#00FFAA';
+        ctx.fillText('SELECT DIFFICULTY', GAME_W / 2, 160);
+        const labels = ['EASY', 'NORMAL', 'HARD'];
+        const descs = ['8 min between showers', '5 min between showers', '3 min between showers'];
+        const colors = ['#44FF44', '#FFDD44', '#FF4444'];
+        for (let i = 0; i < 3; i++) {
+            const y = 260 + i * 80;
+            const sel = i === selectedIdx;
+            if (sel) { ctx.fillStyle = 'rgba(0,255,170,0.1)'; ctx.fillRect(GAME_W/2-250, y-25, 500, 55); }
+            ctx.font = sel ? '18px "Press Start 2P"' : '14px "Press Start 2P"';
+            ctx.fillStyle = sel ? colors[i] : '#555';
+            ctx.fillText(labels[i], GAME_W / 2, y);
+            ctx.font = '9px "Press Start 2P"';
+            ctx.fillStyle = sel ? '#AAA' : '#444';
+            ctx.fillText(descs[i], GAME_W / 2, y + 22);
+        }
+        if (Math.sin(time * 0.005) > 0) {
+            ctx.font = '11px "Press Start 2P"'; ctx.fillStyle = '#888';
+            ctx.fillText('A/D or Arrows to select \u2022 SPACE/ENTER to confirm', GAME_W / 2, 560);
         }
     }
 
-    drawGameOver(ctx, totalStars, rounds, time) {
-        ctx.fillStyle = '#080818';
+    drawShowerWarning(ctx, timer, showerNum, totalShowers, time) {
+        const alpha = 0.3 + Math.sin(time * 0.01) * 0.15;
+        ctx.fillStyle = `rgba(255,30,0,${alpha})`;
         ctx.fillRect(0, 0, GAME_W, GAME_H);
+        ctx.font = '22px "Press Start 2P"'; ctx.textAlign = 'center'; ctx.fillStyle = '#FF4444';
+        ctx.fillText('\u26A0 METEOR SHOWER INCOMING \u26A0', GAME_W / 2, GAME_H / 2 - 30);
+        ctx.font = '14px "Press Start 2P"'; ctx.fillStyle = '#FFD700';
+        ctx.fillText(`Shower ${showerNum}/${totalShowers}`, GAME_W / 2, GAME_H / 2 + 10);
+        ctx.font = '28px "Press Start 2P"'; ctx.fillStyle = '#FFF';
+        ctx.fillText(Math.ceil(timer / 1000).toString(), GAME_W / 2, GAME_H / 2 + 60);
+    }
 
-        ctx.font = '24px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText('GAME COMPLETE!', GAME_W / 2, 160);
+    drawShowerActive(ctx, timer, showerNum, totalShowers) {
+        ctx.font = '12px "Press Start 2P"'; ctx.textAlign = 'center'; ctx.fillStyle = '#FF4444';
+        ctx.fillText(`\u2604 SHOWER ${showerNum}/${totalShowers} \u2014 ${Math.ceil(timer/1000)}s`, GAME_W / 2, GAME_H - 40);
+    }
 
-        ctx.font = '16px "Press Start 2P"';
-        ctx.fillStyle = '#CCC';
-        ctx.fillText(`Total Stars: ${totalStars}`, GAME_W / 2, 260);
-        ctx.fillText(`Rounds: ${rounds}`, GAME_W / 2, 300);
+    drawWinScreen(ctx, progression, time) {
+        ctx.fillStyle = '#040420'; ctx.fillRect(0, 0, GAME_W, GAME_H);
+        ctx.font = '28px "Press Start 2P"'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#00FFAA'; ctx.shadowColor = '#00FFAA'; ctx.shadowBlur = 20;
+        ctx.fillText('CIVILIZATION SAVED', GAME_W / 2, 140); ctx.shadowBlur = 0;
+        ctx.font = '11px "Press Start 2P"'; ctx.fillStyle = '#CCC';
+        ctx.fillText('The final shower destroyed both outer worlds,', GAME_W / 2, 220);
+        ctx.fillText('but your civilization endures on the center hub.', GAME_W / 2, 245);
+        ctx.fillText('Two species, once stranded, now thrive as one.', GAME_W / 2, 270);
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillStyle = '#FF8844'; ctx.fillText(`Defense: ${progression.defenseScore}`, GAME_W / 2, 340);
+        ctx.fillStyle = '#44DD88'; ctx.fillText(`Sustainability: ${progression.sustainScore}`, GAME_W / 2, 365);
+        ctx.fillStyle = '#FFDD44'; ctx.fillText(`Structures: ${progression.totalBuilt}/${BUILD_STAGES.length}`, GAME_W / 2, 390);
+        if (Math.sin(time * 0.005) > 0) {
+            ctx.font = '12px "Press Start 2P"'; ctx.fillStyle = '#888';
+            ctx.fillText('Press SPACE to play again', GAME_W / 2, 500);
+        }
+    }
 
-        const blink = Math.sin(time * 0.005) > 0;
-        if (blink) {
-            ctx.font = '12px "Press Start 2P"';
-            ctx.fillStyle = '#888';
-            ctx.fillText('Press SPACE to play again', GAME_W / 2, 480);
+    drawLossScreen(ctx, progression, time) {
+        ctx.fillStyle = '#100404'; ctx.fillRect(0, 0, GAME_W, GAME_H);
+        ctx.font = '28px "Press Start 2P"'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#FF3333'; ctx.shadowColor = '#FF0000'; ctx.shadowBlur = 20;
+        ctx.fillText('CIVILIZATION LOST', GAME_W / 2, 140); ctx.shadowBlur = 0;
+        ctx.font = '11px "Press Start 2P"'; ctx.fillStyle = '#999';
+        ctx.fillText('The meteors were too powerful.', GAME_W / 2, 220);
+        ctx.fillText('Without adequate defense and sustainability,', GAME_W / 2, 245);
+        ctx.fillText('the hub crumbled into the void.', GAME_W / 2, 270);
+        ctx.font = '10px "Press Start 2P"';
+        ctx.fillStyle = '#FF8844'; ctx.fillText(`Defense: ${progression.defenseScore} (need 80)`, GAME_W / 2, 340);
+        ctx.fillStyle = '#44DD88'; ctx.fillText(`Sustain: ${progression.sustainScore} (need 80)`, GAME_W / 2, 365);
+        if (Math.sin(time * 0.005) > 0) {
+            ctx.font = '12px "Press Start 2P"'; ctx.fillStyle = '#888';
+            ctx.fillText('Press SPACE to try again', GAME_W / 2, 500);
+        }
+    }
+
+    drawGameOver(ctx, a, b, time) {
+        ctx.fillStyle = '#080818'; ctx.fillRect(0, 0, GAME_W, GAME_H);
+        ctx.font = '24px "Press Start 2P"'; ctx.textAlign = 'center'; ctx.fillStyle = '#FFD700';
+        ctx.fillText('GAME OVER', GAME_W / 2, GAME_H / 2);
+        if (Math.sin(time * 0.005) > 0) {
+            ctx.font = '12px "Press Start 2P"'; ctx.fillStyle = '#888';
+            ctx.fillText('Press SPACE to play again', GAME_W / 2, GAME_H / 2 + 60);
         }
     }
 }

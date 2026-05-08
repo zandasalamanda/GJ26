@@ -89,7 +89,7 @@ export class InputManager {
     p1CycleRight(){ return this.isJustPressed('Digit2'); }
 
     // Player 2 actions
-    p2Interact()  { return this.isJustPressed('Slash'); }
+    p2Interact()  { return this.isJustPressed('Slash') || this.isJustPressed('Enter'); }
     p2Toss()      { return this.isJustPressed('Period'); }
     p2Craft()     { return this.isJustPressed('Comma'); }
     p2Process()   { return this.isJustPressed('KeyM'); }
@@ -100,6 +100,8 @@ export class InputManager {
     // Global actions
     pause()       { return this.isJustPressed('Escape'); }
     confirm()     { return this.isJustPressed('Space') || this.isJustPressed('Enter'); }
+    p1Confirm()   { return this.isJustPressed('Space'); }
+    p2Confirm()   { return this.isJustPressed('Enter'); }
     anyKeyPressed() { return Object.values(this.justPressed).some(v => v); }
 
     destroy() {

@@ -360,4 +360,71 @@ export class ParticleSystem {
             ));
         }
     }
+
+    // Meteor explosion — large chaotic burst
+    emitMeteorExplosion(x, y, count = 25) {
+        // Fire core
+        for (let i = 0; i < count; i++) {
+            const angle = randRange(0, Math.PI * 2);
+            const speed = randRange(1.5, 6);
+            const hue = randRange(10, 50);
+            this.add(new Particle(
+                x + randRange(-4, 4), y + randRange(-4, 4),
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed - 1,
+                `hsl(${hue}, 100%, ${randRange(45, 75)}%)`,
+                randRange(2, 5),
+                randRange(400, 900),
+                0.06,
+                0.94,
+                i % 3 === 0 ? 'star' : 'circle'
+            ));
+        }
+        // Debris chunks
+        for (let i = 0; i < 8; i++) {
+            const angle = randRange(0, Math.PI * 2);
+            const speed = randRange(2, 5);
+            this.add(new Particle(
+                x, y,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed - 2,
+                '#442200',
+                randRange(3, 6),
+                randRange(500, 1000),
+                0.15,
+                0.92,
+                'square'
+            ));
+        }
+        // White flash ring
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            this.add(new Particle(
+                x, y,
+                Math.cos(angle) * 4,
+                Math.sin(angle) * 2.5,
+                '#FFFFCC',
+                randRange(2, 4),
+                randRange(200, 400),
+                0,
+                0.9,
+                'circle'
+            ));
+        }
+    }
+
+    // World-space toss trail — uses worldParticles so it works in split screen
+    emitTossTrailWorld(isoX, isoY, color, count = 1) {
+        for (let i = 0; i < count; i++) {
+            this.worldParticles.push(new WorldParticle(
+                isoX + randRange(-0.1, 0.1),
+                isoY + randRange(-0.1, 0.1),
+                randRange(-0.08, 0.08),
+                randRange(-0.15, 0),
+                color,
+                randRange(0.3, 0.7),
+                randRange(200, 400)
+            ));
+        }
+    }
 }

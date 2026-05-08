@@ -1,5 +1,5 @@
 // ============================================
-// FLAT-EARTHURZ — Player
+// FLAT-EARTHRZ — Player
 // ============================================
 
 import { PLAYER_SPEED, PLAYER_SPEED_BOOSTED, PLAYER_INVENTORY_SIZE, HARVEST_TIME, HARVEST_TIME_FRENZY, TOSS_SPEED, TOSS_ARC_HEIGHT, MAT_COLORS, dist, lerp, ISLANDS, LEAP_DURATION, LEAP_ARC, easeInOutCubic } from './utils.js';
@@ -205,8 +205,13 @@ export class Player {
             if (dx !== 0 || dy !== 0) {
                 this.state = 'walking';
 
-                const isoMoveX = (dx + dy) * 0.5;
-                const isoMoveY = (dy - dx) * 0.5;
+                let isoMoveX = (dx + dy) * 0.5;
+                let isoMoveY = (dy - dx) * 0.5;
+                // Normalize so all directions move at equal speed
+                const isoLen = Math.sqrt(isoMoveX * isoMoveX + isoMoveY * isoMoveY);
+                if (isoLen > 0) { isoMoveX /= isoLen; isoMoveY /= isoLen; }
+                // Scale by 0.707 to match original forward speed feel
+                isoMoveX *= 0.707; isoMoveY *= 0.707;
                 this.lastIsoMoveX = isoMoveX;
                 this.lastIsoMoveY = isoMoveY;
 

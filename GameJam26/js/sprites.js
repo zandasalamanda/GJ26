@@ -23,6 +23,8 @@ export class SpriteManager {
         await this._loadAliens();
         onProgress(0.9, 'Generating UI...');
         this._generateUI();
+        onProgress(0.95, 'Generating structures...');
+        this._generateStructures();
         onProgress(1.0, 'Ready!');
         this.loaded = true;
     }
@@ -359,6 +361,205 @@ export class SpriteManager {
             x.strokeStyle = '#FFF'; x.lineWidth = 1;
             x.beginPath(); x.arc(9,9,7,0,Math.PI*2); x.stroke();
             this.sprites[p.key] = c;
+        }
+    }
+
+    _generateStructures() {
+        const W = 48, H = 56;
+        const structs = [
+            { key: 'struct_barricade', draw: (x) => {
+                // Stacked stone blocks
+                x.fillStyle = '#887766';
+                x.fillRect(8, 30, 32, 12);
+                x.fillStyle = '#776655';
+                x.fillRect(10, 24, 28, 8);
+                x.fillStyle = '#665544';
+                x.fillRect(12, 18, 24, 8);
+                // Wooden supports
+                x.fillStyle = '#8B6914';
+                x.fillRect(6, 20, 3, 22);
+                x.fillRect(39, 20, 3, 22);
+            }},
+            { key: 'struct_watch_tower', draw: (x) => {
+                // Tall tower
+                x.fillStyle = '#8B6914';
+                x.fillRect(19, 6, 10, 40);
+                x.fillStyle = '#6B4F12';
+                x.fillRect(17, 40, 14, 6);
+                // Platform
+                x.fillStyle = '#AA7722';
+                x.fillRect(12, 4, 24, 6);
+                // Antenna
+                x.fillStyle = '#FFD700';
+                x.fillRect(23, 0, 2, 6);
+                x.fillStyle = '#FF4444';
+                x.fillRect(22, 0, 4, 2);
+            }},
+            { key: 'struct_stone_wall', draw: (x) => {
+                // Thick wall spanning width
+                x.fillStyle = '#998877';
+                x.fillRect(4, 26, 40, 16);
+                x.fillStyle = '#887766';
+                x.fillRect(6, 22, 36, 6);
+                // Crenellations
+                for (let i = 0; i < 5; i++) {
+                    x.fillStyle = '#AA9988';
+                    x.fillRect(6 + i * 8, 18, 5, 6);
+                }
+            }},
+            { key: 'struct_shield_pylon', draw: (x) => {
+                // Crystal pylon
+                x.fillStyle = '#446688';
+                x.fillRect(18, 16, 12, 26);
+                // Crystal top
+                x.fillStyle = '#66BBFF';
+                x.beginPath(); x.moveTo(24, 4); x.lineTo(30, 16); x.lineTo(18, 16); x.fill();
+                // Glow
+                x.fillStyle = 'rgba(100,180,255,0.3)';
+                x.beginPath(); x.arc(24, 20, 14, 0, Math.PI * 2); x.fill();
+                // Base
+                x.fillStyle = '#334455';
+                x.fillRect(14, 40, 20, 6);
+            }},
+            { key: 'struct_turret', draw: (x) => {
+                // Base platform
+                x.fillStyle = '#556677';
+                x.fillRect(10, 34, 28, 10);
+                // Turret body
+                x.fillStyle = '#778899';
+                x.fillRect(16, 22, 16, 14);
+                // Barrel
+                x.fillStyle = '#445566';
+                x.fillRect(20, 10, 8, 14);
+                x.fillStyle = '#FF6644';
+                x.fillRect(22, 8, 4, 4);
+            }},
+            { key: 'struct_dome', draw: (x) => {
+                // Reinforced dome
+                x.fillStyle = '#889999';
+                x.beginPath(); x.arc(24, 30, 18, Math.PI, 0); x.fill();
+                x.fillStyle = '#667788';
+                x.fillRect(6, 30, 36, 8);
+                // Ribs
+                x.strokeStyle = '#AABBCC';
+                x.lineWidth = 1;
+                for (let a = 0.3; a < Math.PI; a += 0.5) {
+                    x.beginPath();
+                    x.moveTo(24 + Math.cos(a) * 18, 30 - Math.sin(a) * 18);
+                    x.lineTo(24, 30);
+                    x.stroke();
+                }
+            }},
+            { key: 'struct_garden', draw: (x) => {
+                // Glass dome
+                x.fillStyle = 'rgba(100,220,150,0.4)';
+                x.beginPath(); x.arc(24, 32, 16, Math.PI, 0); x.fill();
+                x.strokeStyle = '#66DD99';
+                x.lineWidth = 2;
+                x.beginPath(); x.arc(24, 32, 16, Math.PI, 0); x.stroke();
+                // Plants inside
+                x.fillStyle = '#33AA44';
+                x.fillRect(14, 28, 4, 8);
+                x.fillRect(22, 24, 4, 12);
+                x.fillRect(30, 26, 4, 10);
+                x.fillStyle = '#44CC55';
+                x.fillRect(15, 24, 2, 6);
+                x.fillRect(23, 20, 2, 6);
+                // Base
+                x.fillStyle = '#554433';
+                x.fillRect(8, 34, 32, 6);
+            }},
+            { key: 'struct_water', draw: (x) => {
+                // Tank
+                x.fillStyle = '#4488AA';
+                x.fillRect(12, 18, 24, 22);
+                // Water level
+                x.fillStyle = '#66CCFF';
+                x.fillRect(14, 24, 20, 14);
+                // Pipes
+                x.fillStyle = '#556677';
+                x.fillRect(8, 30, 6, 4);
+                x.fillRect(34, 30, 6, 4);
+                // Base
+                x.fillStyle = '#445566';
+                x.fillRect(10, 38, 28, 6);
+            }},
+            { key: 'struct_solar', draw: (x) => {
+                // Panel support
+                x.fillStyle = '#667788';
+                x.fillRect(22, 24, 4, 20);
+                // Angled panels
+                x.fillStyle = '#3366AA';
+                x.beginPath();
+                x.moveTo(6, 18); x.lineTo(42, 18);
+                x.lineTo(38, 26); x.lineTo(10, 26);
+                x.fill();
+                // Panel shine
+                x.fillStyle = '#4488DD';
+                x.fillRect(12, 20, 8, 4);
+                x.fillRect(28, 20, 8, 4);
+                // Blue glow
+                x.fillStyle = 'rgba(60,120,255,0.2)';
+                x.beginPath(); x.arc(24, 22, 20, 0, Math.PI * 2); x.fill();
+            }},
+            { key: 'struct_habitat', draw: (x) => {
+                // Rounded module
+                x.fillStyle = '#887799';
+                x.beginPath(); x.arc(24, 30, 16, 0, Math.PI * 2); x.fill();
+                x.fillStyle = '#776688';
+                x.fillRect(8, 30, 32, 12);
+                // Windows
+                x.fillStyle = '#FFEE88';
+                x.fillRect(14, 26, 4, 4);
+                x.fillRect(30, 26, 4, 4);
+                // Door
+                x.fillStyle = '#554466';
+                x.fillRect(21, 32, 6, 10);
+                x.fillStyle = '#FFDD66';
+                x.fillRect(22, 34, 4, 6);
+            }},
+            { key: 'struct_beacon', draw: (x) => {
+                // Tall signal tower
+                x.fillStyle = '#998877';
+                x.fillRect(20, 10, 8, 34);
+                x.fillStyle = '#AA9988';
+                x.fillRect(16, 40, 16, 6);
+                // Antenna array
+                x.fillStyle = '#FFD700';
+                x.fillRect(10, 6, 28, 3);
+                x.fillRect(23, 0, 2, 8);
+                // Signal rings
+                x.strokeStyle = 'rgba(255,215,0,0.4)';
+                x.lineWidth = 1;
+                x.beginPath(); x.arc(24, 6, 8, 0, Math.PI * 2); x.stroke();
+                x.beginPath(); x.arc(24, 6, 14, 0, Math.PI * 2); x.stroke();
+            }},
+            { key: 'struct_landing_pad', draw: (x) => {
+                // Flat platform
+                x.fillStyle = '#778899';
+                x.fillRect(4, 30, 40, 12);
+                x.fillStyle = '#667788';
+                x.fillRect(6, 28, 36, 4);
+                // H marking
+                x.fillStyle = '#FFD700';
+                x.fillRect(14, 32, 3, 8);
+                x.fillRect(31, 32, 3, 8);
+                x.fillRect(14, 35, 20, 3);
+                // Corner lights
+                x.fillStyle = '#FF4444';
+                x.fillRect(6, 30, 3, 3);
+                x.fillRect(39, 30, 3, 3);
+                x.fillStyle = '#44FF44';
+                x.fillRect(6, 39, 3, 3);
+                x.fillRect(39, 39, 3, 3);
+            }},
+        ];
+
+        for (const s of structs) {
+            const c = this._c(W, H);
+            const x = c.getContext('2d');
+            s.draw(x);
+            this.sprites[s.key] = c;
         }
     }
 }

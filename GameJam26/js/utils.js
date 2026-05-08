@@ -1,5 +1,5 @@
 // ============================================
-// FLAT-EARTHURZ — Utils & Constants
+// FLAT-EARTHRZ — Utils & Constants
 // ============================================
 
 // ---- Display ----
@@ -93,13 +93,10 @@ export const MAT_COLORS = {
     [MAT.ROPE]: '#998855',
 };
 
-// ---- Processing Recipes ----
+// ---- Processing Recipes (simplified) ----
 export const PROCESSING_RECIPES = [
-    { input: { [MAT.WOOD]: 1 }, output: { [MAT.STICKS]: 2 }, name: 'Chop Sticks' },
-    { input: { [MAT.STONE]: 1 }, output: { [MAT.PEBBLES]: 2 }, name: 'Crush Pebbles' },
     { input: { [MAT.WOOD]: 2 }, output: { [MAT.PLANKS]: 1 }, name: 'Saw Planks' },
     { input: { [MAT.STONE]: 2 }, output: { [MAT.BRICKS]: 1 }, name: 'Kiln Bricks' },
-    { input: { [MAT.CRYSTAL]: 1 }, output: { [MAT.CRYSTAL_SHARDS]: 2 }, name: 'Split Crystal' },
     { input: { [MAT.ORE]: 1, [MAT.COAL]: 1 }, output: { [MAT.METAL_INGOT]: 1 }, name: 'Smelt Ingot' },
     { input: { [MAT.FIBER]: 2 }, output: { [MAT.ROPE]: 1 }, name: 'Weave Rope' },
 ];
@@ -199,7 +196,7 @@ export const ISLANDS = {
     },
     hub: {
         cx: 22, cy: 14,
-        radius: 5,
+        radius: 7,
         tiles: [],
     },
 };
@@ -213,14 +210,17 @@ export const BRIDGES = [
 // Leap zone endpoints: walk to 'from' edge to leap to 'to' on the other island
 export const LEAP_ZONES = [
     // Blue island edge → Hub
-    { fromIsland: 'blue', toIsland: 'hub', from: { x: 15, y: 14 }, to: { x: 20, y: 14 }, allowedPlayers: ['blue'] },
+    { fromIsland: 'blue', toIsland: 'hub', from: { x: 14, y: 14 }, to: { x: 18, y: 14 }, allowedPlayers: ['blue'] },
     // Hub → Blue island
-    { fromIsland: 'hub', toIsland: 'blue', from: { x: 17, y: 14 }, to: { x: 11, y: 14 }, allowedPlayers: ['blue'] },
+    { fromIsland: 'hub', toIsland: 'blue', from: { x: 15, y: 14 }, to: { x: 11, y: 14 }, allowedPlayers: ['blue'] },
     // Red island edge → Hub
-    { fromIsland: 'red', toIsland: 'hub', from: { x: 29, y: 14 }, to: { x: 24, y: 14 }, allowedPlayers: ['red'] },
+    { fromIsland: 'red', toIsland: 'hub', from: { x: 30, y: 14 }, to: { x: 26, y: 14 }, allowedPlayers: ['red'] },
     // Hub → Red island
-    { fromIsland: 'hub', toIsland: 'red', from: { x: 27, y: 14 }, to: { x: 33, y: 14 }, allowedPlayers: ['red'] },
+    { fromIsland: 'hub', toIsland: 'red', from: { x: 29, y: 14 }, to: { x: 33, y: 14 }, allowedPlayers: ['red'] },
 ];
+
+// Leap detection radius (increased for smoother feel)
+export const LEAP_DETECT_RADIUS = 2.0;
 
 export const LEAP_DURATION = 350; // ms — fast leap
 export const LEAP_ARC = 120;     // pixels — high arc

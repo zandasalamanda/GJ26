@@ -216,6 +216,112 @@ export class AudioManager {
         setTimeout(() => this._playTone(200, 0.3, 'sawtooth', 0.3), 400);
     }
 
+    // Rising siren for shower countdown
+    playShowerSiren() {
+        if (!this.initialized || this.muted) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.linearRampToValueAtTime(600, now + 0.6);
+        osc.frequency.linearRampToValueAtTime(200, now + 1.2);
+        gain.gain.setValueAtTime(0.15 * this.sfxVolume, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(now);
+        osc.stop(now + 1.3);
+    }
+
+    // Countdown tick beep
+    playWarningTick() {
+        this._playTone(440, 0.06, 'square', 0.2);
+        this._playTone(880, 0.04, 'square', 0.1);
+    }
+
+    // Heavy meteor explosion
+    playMeteorExplosion() {
+        if (!this.initialized || this.muted) return;
+        const now = this.ctx.currentTime;
+        // Bass boom
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(80, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.4);
+        gain.gain.setValueAtTime(0.5 * this.sfxVolume, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(now);
+        osc.stop(now + 0.5);
+        // Noise burst
+        this._playNoise(0.35, 0.45);
+        // Crackle
+        setTimeout(() => {
+            this._playNoise(0.15, 0.2);
+            this._playTone(120, 0.1, 'sawtooth', 0.15);
+        }, 100);
+    }
+
+    // Aggressive shower music loop
+    startShowerMusic() {
+        if (!this.initialized) return;
+        this.stopMusic();
+        const bpm = 180;
+        const beatLen = 60 / bpm;
+        const melody = [
+            { note: 165, time: 0, dur: 0.08 },
+            { note: 165, time: beatLen * 0.5, dur: 0.08 },
+            { note: 196, time: beatLen, dur: 0.1 },
+            { note: 165, time: beatLen * 1.5, dur: 0.08 },
+            { note: 220, time: beatLen * 2, dur: 0.12 },
+            { note: 165, time: beatLen * 2.5, dur: 0.08 },
+            { note: 262, time: beatLen * 3, dur: 0.15 },
+            { note: 247, time: beatLen * 3.5, dur: 0.1 },
+        ];
+        const bass = [
+            { note: 55, time: 0, dur: 0.15 },
+            { note: 55, time: beatLen, dur: 0.15 },
+            { note: 65, time: beatLen * 2, dur: 0.15 },
+            { note: 55, time: beatLen * 3, dur: 0.15 },
+        ];
+        const loopLength = beatLen * 4;
+        const playLoop = () => {
+            if (!this.initialized || this.muted) return;
+            const now = this.ctx.currentTime;
+            melody.forEach(n => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.value = n.note;
+                gain.gain.value = 0.1;
+                gain.gain.setValueAtTime(0.1, now + n.time);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + n.time + n.dur);
+                osc.connect(gain);
+                gain.connect(this.musicGain);
+                osc.start(now + n.time);
+                osc.stop(now + n.time + n.dur + 0.02);
+            });
+            bass.forEach(n => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.value = n.note;
+                gain.gain.value = 0.18;
+                gain.gain.setValueAtTime(0.18, now + n.time);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + n.time + n.dur);
+                osc.connect(gain);
+                gain.connect(this.musicGain);
+                osc.start(now + n.time);
+                osc.stop(now + n.time + n.dur + 0.02);
+            });
+            this.currentMusic = setTimeout(playLoop, loopLength * 1000);
+        };
+        playLoop();
+    }
+
     // ---- Background Music ----
     startMusic() {
         if (!this.initialized) return;

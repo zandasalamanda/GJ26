@@ -1,7 +1,7 @@
 // ============================================
 // ALIEN ASSEMBLY LINE — Main Game
 // ============================================
-import { GAME_W, GAME_H, ISLANDS, TOTAL_ROUNDS, HARVEST_TIME, HARVEST_TIME_FRENZY, CRAFT_TIME, MAT_COLORS, MAT_NAMES, dist, lerp, isoToScreen, CONSTRUCTION_RECIPES, PROCESSING_RECIPES, POWERUP_TYPES, POWERUP_DURATION, POWERUP_SPAWN_INTERVAL, LEAP_ZONES, randRange, randInt, pick } from './utils.js';
+import { GAME_W, GAME_H, ISLANDS, HARVEST_TIME, HARVEST_TIME_FRENZY, CRAFT_TIME, MAT_COLORS, MAT_NAMES, dist, lerp, isoToScreen, PROCESSING_RECIPES, POWERUP_TYPES, POWERUP_DURATION, POWERUP_SPAWN_INTERVAL, LEAP_ZONES, randRange, randInt, pick } from './utils.js';
 import { InputManager } from './input.js';
 import { SpriteManager } from './sprites.js';
 import { Camera } from './camera.js';
@@ -11,8 +11,9 @@ import { World, T } from './world.js';
 import { ResourceManager } from './resources.js';
 import { Player, TossedItem } from './player.js';
 import { CraftingSystem } from './crafting.js';
-import { OrderManager } from './orders.js';
+import { ProgressionManager, BUILD_STAGES, TOTAL_SHOWERS, DEFENSE_THRESHOLD, SUSTAIN_THRESHOLD, DIFFICULTY } from './progression.js';
 import { UIManager } from './ui.js';
+import { Tutorial } from './tutorial.js';
 
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
@@ -30,11 +31,9 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---- Game State ----
-const STATE = { LOADING: 0, TITLE: 1, PLAYING: 2, PAUSED: 3, ROUND_END: 4, GAME_OVER: 5, CRAFTING: 6 };
+const STATE = { LOADING: 0, TITLE: 1, PLAYING: 2, PAUSED: 3, ROUND_END: 4, GAME_OVER: 5, DIFFICULTY_SELECT: 7, TUTORIAL: 8, SHOWER_WARNING: 9, SHOWER_ACTIVE: 10, WIN: 11, LOSS: 12, ADMIN: 13 };
 let state = STATE.LOADING;
 let gameTime = 0;
-let roundStarsTotal = 0;
-let currentRound = 0;
 
 // ---- Systems ----
 const input = new InputManager();
@@ -42,7 +41,7 @@ const sprites = new SpriteManager();
 const camera = new Camera();
 const particles = new ParticleSystem();
 const audio = new AudioManager();
-let world, resources, crafting, orders, ui;
+let world, resources, crafting, progression, ui, tutorial;
 let player1, player2, players;
 let tossedItems = [];
 let powerups = [];
@@ -51,6 +50,10 @@ let hazardTimer = 0;
 let hazardActive = null;
 let roundSummary = null;
 let craftingPlayer = null;
+let groundItems = []; // items on the hub ground waiting for pickup
+let hubStockpile = {}; // shared material storage — crafting draws from this
+let warningSirenTimer = 0; // for countdown audio
+let showerMusicStarted = false;
 
 // Machine positions (tile coords)
 const CRAFTER_POS = { x: ISLANDS.hub.cx - 1, y: ISLANDS.hub.cy - 1 };
@@ -68,8 +71,9 @@ async function init() {
     world = new World(sprites);
     resources = new ResourceManager(world, sprites);
     crafting = new CraftingSystem();
-    orders = new OrderManager(crafting);
+    progression = new ProgressionManager();
     ui = new UIManager(sprites);
+    tutorial = new Tutorial();
     setupPlayers();
     state = STATE.TITLE;
     document.getElementById('loading-screen').classList.add('hidden');
@@ -87,14 +91,18 @@ function setupPlayers() {
     camera.snapTo((bc.x + rc.x) / 2, (bc.y + rc.y) / 2);
 }
 
-function startRound(roundNum) {
-    currentRound = roundNum;
+function startGame(difficulty) {
+    progression.setDifficulty(difficulty);
+    progression.reset();
     resources.spawnInitial();
-    orders.startRound(roundNum);
     tossedItems = [];
     powerups = [];
+    groundItems = [];
+    hubStockpile = {};
     powerupTimer = POWERUP_SPAWN_INTERVAL;
     hazardActive = null;
+    showerMusicStarted = false;
+    warningSirenTimer = 0;
     state = STATE.PLAYING;
     audio.init();
     audio.resume();
@@ -111,9 +119,14 @@ function loop(timestamp) {
 
     switch (state) {
         case STATE.TITLE: updateTitle(); break;
+        case STATE.DIFFICULTY_SELECT: updateDifficultySelect(); break;
+        case STATE.TUTORIAL: updateTutorial(dt); break;
         case STATE.PLAYING: updatePlaying(dt); break;
         case STATE.PAUSED: updatePaused(); break;
-        case STATE.ROUND_END: updateRoundEnd(); break;
+        case STATE.SHOWER_WARNING: updateShowerWarning(dt); break;
+        case STATE.SHOWER_ACTIVE: updateShowerActive(dt); break;
+        case STATE.WIN: updateWinScreen(); break;
+        case STATE.LOSS: updateLossScreen(); break;
         case STATE.GAME_OVER: updateGameOver(); break;
     }
     requestAnimationFrame(loop);
@@ -122,7 +135,6 @@ function loop(timestamp) {
 // ---- Title ----
 let titleMusicStarted = false;
 function updateTitle() {
-    // Start title music on first interaction
     if (!titleMusicStarted && input.anyKeyPressed()) {
         audio.init(); audio.resume();
         audio.startMusic();
@@ -131,13 +143,63 @@ function updateTitle() {
     if (input.confirm()) {
         audio.init(); audio.resume();
         if (!titleMusicStarted) { audio.startMusic(); titleMusicStarted = true; }
-        setupPlayers();
-        resources.nodes = [];
-        roundStarsTotal = 0;
-        startRound(0);
+        selectedDifficulty = 1; // default to Normal
+        state = STATE.DIFFICULTY_SELECT;
     }
     ctx.clearRect(0, 0, GAME_W, GAME_H);
     ui.drawTitleScreen(ctx, gameTime);
+}
+
+// ---- Difficulty Select ----
+let selectedDifficulty = 1; // 0=Easy, 1=Normal, 2=Hard
+const DIFF_KEYS = ['easy', 'normal', 'hard'];
+
+function updateDifficultySelect() {
+    if (input.isJustPressed('ArrowLeft') || input.isJustPressed('KeyA')) {
+        selectedDifficulty = Math.max(0, selectedDifficulty - 1); audio.playUIClick();
+    }
+    if (input.isJustPressed('ArrowRight') || input.isJustPressed('KeyD')) {
+        selectedDifficulty = Math.min(2, selectedDifficulty + 1); audio.playUIClick();
+    }
+    if (input.confirm()) {
+        setupPlayers();
+        resources.nodes = [];
+        startGame(DIFF_KEYS[selectedDifficulty]);
+        // Try starting tutorial
+        if (tutorial.start()) {
+            state = STATE.TUTORIAL;
+        }
+        return;
+    }
+    if (input.pause()) { state = STATE.TITLE; return; }
+    ctx.clearRect(0, 0, GAME_W, GAME_H);
+    ui.drawDifficultySelect(ctx, selectedDifficulty, DIFF_KEYS, gameTime);
+}
+
+// ---- Tutorial ----
+function updateTutorial(dt) {
+    // Track player actions for tutorial checks
+    if (input.getP1Movement().dx !== 0 || input.getP1Movement().dy !== 0) tutorial.p1Moved = true;
+    if (input.p1Interact()) tutorial.p1Harvested = true;
+    if (input.p1Toss()) tutorial.p1Tossed = true;
+    if (input.p1Craft()) tutorial.p1Crafted = true;
+
+    tutorial.update(dt, input);
+
+    if (tutorial.isComplete) {
+        state = STATE.PLAYING;
+    }
+
+    // Still run the game underneath during action steps
+    const step = tutorial.currentStep;
+    if (step && step.type === 'action') {
+        updatePlaying(dt);
+    } else {
+        drawPlayingScene();
+    }
+
+    // Draw tutorial overlay on top
+    tutorial.draw(ctx, gameTime);
 }
 
 // ---- Playing ----
@@ -155,7 +217,7 @@ function updatePlaying(dt) {
         input.isJustPressed('KeyE'), input.isJustPressed('KeyF'));
     handleCraftMenuInput(player2,
         input.isJustPressed('ArrowUp'), input.isJustPressed('ArrowDown'),
-        input.isJustPressed('Slash'), input.isJustPressed('Comma'));
+        input.isJustPressed('Slash') || input.isJustPressed('Enter'), input.isJustPressed('Comma'));
 
     // Movement — freeze player while their menu is open
     const m1 = player1.craftMenuOpen ? { dx: 0, dy: 0 } : input.getP1Movement();
@@ -174,10 +236,8 @@ function updatePlaying(dt) {
     for (let i = tossedItems.length - 1; i >= 0; i--) {
         const item = tossedItems[i];
         item.update(dt);
-        particles.emitTossTrail(
-            ...Object.values(camera.worldToScreen(item.x, item.y)),
-            MAT_COLORS[item.material]
-        );
+        // World-space trail — works in split screen
+        particles.emitTossTrailWorld(item.x, item.y, MAT_COLORS[item.material]);
         if (!item.alive) {
             // Land - try to give to nearest player or drop
             handleItemLand(item);
@@ -185,17 +245,29 @@ function updatePlaying(dt) {
         }
     }
 
-    // Orders
-    orders.update(dt);
-    if (orders.currentOrder && orders.currentOrder.urgent) {
-        if (Math.floor(gameTime / 500) % 2 === 0) audio.playTimerWarning();
+    // Ground item auto-pickup + decay
+    for (let i = groundItems.length - 1; i >= 0; i--) {
+        groundItems[i].timer -= dt;
+        if (groundItems[i].timer <= 0) { groundItems.splice(i, 1); continue; }
+        // Visual-only items (already in hub stockpile) — don't re-pickup
+        if (groundItems[i].visual) continue;
+        for (const p of players) {
+            if (dist(p.x, p.y, groundItems[i].x, groundItems[i].y) < 1.5 && !p.inventoryFull) {
+                p.addItem(groundItems[i].material);
+                p.showEmote('+' + MAT_NAMES[groundItems[i].material]);
+                audio.playPickup();
+                groundItems.splice(i, 1);
+                break;
+            }
+        }
     }
-    if (orders.roundComplete) {
-        roundSummary = orders.getRoundSummary();
-        roundStarsTotal += roundSummary.totalStars;
-        audio.stopMusic();
-        audio.playOrderComplete();
-        state = STATE.ROUND_END;
+
+    // Progression — shower timer
+    progression.showerTimer -= dt;
+    if (progression.showerTimer <= 0 && progression.showerCount < TOTAL_SHOWERS) {
+        progression.showerTimer = 0;
+        showerWarningTimer = 5000; // 5s warning before impact
+        state = STATE.SHOWER_WARNING;
     }
 
     // Power-up spawning
@@ -311,16 +383,31 @@ function handlePlayerActions(player, interact, toss, craft, process, cycleL, cyc
         }
     }
 
-    // Craft (at crafter machine) — toggle player's own menu
+    // Craft (at crafter machine) — build from hub stockpile
     if (craft) {
         const dCrafter = dist(player.x, player.y, CRAFTER_POS.x, CRAFTER_POS.y);
         if (dCrafter < 2.5) {
-            if (player.craftMenuOpen && player.craftMenuMode === 'craft') {
-                player.craftMenuOpen = false;
+            const build = progression.getCurrentBuild();
+            if (!build) {
+                player.showEmote('All built!');
+            } else if (canBuildFromHub(build)) {
+                // Deduct from hub stockpile
+                for (const [mat, qty] of Object.entries(build.recipe)) {
+                    hubStockpile[mat] -= qty;
+                    if (hubStockpile[mat] <= 0) delete hubStockpile[mat];
+                }
+                progression.completed.push(progression.buildIndex);
+                progression.buildIndex++;
+                const sc = camera.worldToScreen(CRAFTER_POS.x, CRAFTER_POS.y);
+                particles.emitCraftBurst(sc.x, sc.y);
+                audio.playCraft();
+                camera.shake(3, 150);
+                ui.addNotification(`Built ${build.name}!`, '#00FFAA');
+                player.showEmote(build.name + '!');
+                placeStructure(build);
             } else {
-                player.craftMenuOpen = true;
-                player.craftMenuMode = 'craft';
-                player.craftMenuSelection = 0;
+                player.showEmote('Need materials!');
+                audio.playError();
             }
         } else {
             player.showEmote('Go to Crafter!');
@@ -345,12 +432,31 @@ function handlePlayerActions(player, interact, toss, craft, process, cycleL, cyc
     }
 }
 
+function canBuildFromHub(build) {
+    for (const [mat, qty] of Object.entries(build.recipe)) {
+        if ((hubStockpile[mat] || 0) < qty) return false;
+    }
+    return true;
+}
+
 function handleItemLand(item) {
     audio.playLand();
     const sc = camera.worldToScreen(item.toX, item.toY);
     particles.emitHarvestSparks(sc.x, sc.y, MAT_COLORS[item.material], 4);
 
-    // Check if any player is near the landing spot
+    const landTile = world.getTile(Math.floor(item.toX), Math.floor(item.toY));
+
+    // Items landing on hub → add to shared hub stockpile for crafting
+    if (landTile === T.HUB || landTile === T.BRIDGE) {
+        hubStockpile[item.material] = (hubStockpile[item.material] || 0) + 1;
+        ui.addFloatingText(sc.x, sc.y - 10, '+' + MAT_NAMES[item.material] + ' (Hub)', MAT_COLORS[item.material]);
+        audio.playPickup();
+        // Drop a visual ground item briefly so player sees it
+        groundItems.push({ material: item.material, x: item.toX, y: item.toY, timer: 2000, visual: true });
+        return;
+    }
+
+    // Items landing on player islands → give to nearby player or ground
     for (const p of players) {
         if (dist(p.x, p.y, item.toX, item.toY) < 2.5) {
             if (p.addItem(item.material)) {
@@ -360,82 +466,60 @@ function handleItemLand(item) {
             }
         }
     }
-    // Item lands on ground - give to any player on hub
-    for (const p of players) {
-        const t = world.getTile(Math.floor(p.x), Math.floor(p.y));
-        if (t === T.HUB && !p.inventoryFull) {
-            p.addItem(item.material);
-            p.showEmote('+' + MAT_NAMES[item.material]);
-            return;
-        }
-    }
-    // Lost to void
-    ui.addNotification('Item lost to the void!', '#FF4444');
-}
-
-function tryDeliver(player) {
-    if (!orders.currentOrder) return;
-    const orderName = orders.currentOrder.itemName;
-    // Player's "crafted items" are tracked via a special tag in inventory
-    // For simplicity, we check if the player has a crafted item matching
-    const idx = player.inventory.indexOf('crafted_' + orderName);
-    if (idx >= 0) {
-        player.inventory.splice(idx, 1);
-        if (player.selectedSlot >= player.inventory.length) player.selectedSlot = Math.max(0, player.inventory.length - 1);
-        orders.deliverItem(orderName);
-        const sc = camera.worldToScreen(DELIVERY_POS.x, DELIVERY_POS.y);
-        particles.emitDeliveryBurst(sc.x, sc.y);
-        audio.playDeliver();
-        camera.shake(3, 150);
-        ui.addNotification(`Delivered ${orderName}!`, '#00FFAA');
-        if (orders.combo >= 2) {
-            audio.playCombo();
-            ui.addNotification(`COMBO x${orders.combo}!`, '#FFD700');
-        }
+    if (landTile !== T.VOID) {
+        groundItems.push({ material: item.material, x: item.toX, y: item.toY, timer: 30000 });
+        ui.addFloatingText(sc.x, sc.y - 10, '+' + MAT_NAMES[item.material], MAT_COLORS[item.material]);
     } else {
-        player.showEmote('Need: ' + orderName);
-        audio.playError();
+        ui.addNotification('Item lost to the void!', '#FF4444');
     }
 }
 
-// ---- Per-Player Craft Menu Input ----
+// Structure placement positions on the hub island (clockwise from top)
+const STRUCTURE_POSITIONS = [
+    { x: ISLANDS.hub.cx - 2, y: ISLANDS.hub.cy - 3 },
+    { x: ISLANDS.hub.cx + 2, y: ISLANDS.hub.cy - 3 },
+    { x: ISLANDS.hub.cx + 3, y: ISLANDS.hub.cy - 1 },
+    { x: ISLANDS.hub.cx + 3, y: ISLANDS.hub.cy + 1 },
+    { x: ISLANDS.hub.cx + 2, y: ISLANDS.hub.cy + 3 },
+    { x: ISLANDS.hub.cx - 2, y: ISLANDS.hub.cy + 3 },
+    { x: ISLANDS.hub.cx - 3, y: ISLANDS.hub.cy + 1 },
+    { x: ISLANDS.hub.cx - 3, y: ISLANDS.hub.cy - 1 },
+    { x: ISLANDS.hub.cx, y: ISLANDS.hub.cy - 4 },
+    { x: ISLANDS.hub.cx, y: ISLANDS.hub.cy + 4 },
+    { x: ISLANDS.hub.cx - 1, y: ISLANDS.hub.cy },
+    { x: ISLANDS.hub.cx + 1, y: ISLANDS.hub.cy },
+];
+
+function placeStructure(build) {
+    const idx = progression.totalBuilt - 1;
+    const pos = STRUCTURE_POSITIONS[idx % STRUCTURE_POSITIONS.length];
+    // Add structure tile to world
+    world.addStructureTile(pos.x, pos.y, build.name);
+    // Particles at placement
+    const sc = camera.worldToScreen(pos.x, pos.y);
+    particles.emitDeliveryBurst(sc.x, sc.y);
+    camera.shake(4, 200);
+}
+
+// ---- Per-Player Process Menu Input ----
 function handleCraftMenuInput(player, navUp, navDown, confirm, close) {
     if (!player.craftMenuOpen) return;
-    const recipes = player.craftMenuMode === 'craft'
-        ? crafting.getAvailableRecipes() : PROCESSING_RECIPES;
+    const recipes = PROCESSING_RECIPES;
     if (navUp)   { player.craftMenuSelection = Math.max(0, player.craftMenuSelection - 1); audio.playUIClick(); }
     if (navDown) { player.craftMenuSelection = Math.min(recipes.length - 1, player.craftMenuSelection + 1); audio.playUIClick(); }
     if (close)   { player.craftMenuOpen = false; return; }
     if (confirm) {
         const idx = player.craftMenuSelection;
-        if (player.craftMenuMode === 'craft') {
-            if (crafting.canCraft(player, idx)) {
-                const name = crafting.craft(player, idx);
-                if (name) {
-                    player.addItem('crafted_' + name);
-                    const sc = camera.worldToScreen(CRAFTER_POS.x, CRAFTER_POS.y);
-                    particles.emitCraftBurst(sc.x, sc.y);
-                    audio.playCraft();
-                    camera.shake(2, 100);
-                    ui.addNotification(`${player.id === 'blue' ? 'P1' : 'P2'} crafted ${name}!`, '#00FFAA');
-                    player.showEmote(name + '!');
-                }
-            } else {
-                audio.playError();
-                player.showEmote('Need materials!');
+        if (crafting.canProcess(player, idx)) {
+            const result = crafting.process(player, idx);
+            if (result) {
+                const sc = camera.worldToScreen(FURNACE_POS.x, FURNACE_POS.y);
+                particles.emitCraftBurst(sc.x, sc.y, 10);
+                audio.playCraft();
+                ui.addNotification(`Processed: ${result.name}!`, '#44AAFF');
             }
         } else {
-            if (crafting.canProcess(player, idx)) {
-                const result = crafting.process(player, idx);
-                if (result) {
-                    const sc = camera.worldToScreen(FURNACE_POS.x, FURNACE_POS.y);
-                    particles.emitCraftBurst(sc.x, sc.y, 10);
-                    audio.playCraft();
-                    ui.addNotification(`Processed: ${result.name}!`, '#44AAFF');
-                }
-            } else {
-                audio.playError();
-            }
+            audio.playError();
         }
     }
 }
@@ -484,37 +568,191 @@ function applyPowerup(player, type) {
         case 'FRENZY': player.harvestFrenzy = true; player.powerupTimers.frenzy = POWERUP_DURATION; break;
         case 'DOUBLE': player.doubleYield = true; player.powerupTimers.double = POWERUP_DURATION; break;
         case 'TIME_WARP':
-            if (orders.currentOrder) { orders.currentOrder.timeRemaining += 20; orders.currentOrder.timeLimit += 20; }
+            progression.showerTimer += 30000; // +30s to next shower
             break;
     }
 }
 
-// ---- Pause / Round End / Game Over ----
+// ---- Pause / Shower / Win / Loss ----
+let showerWarningTimer = 0;
+
 function updatePaused() {
     if (input.pause()) { state = STATE.PLAYING; return; }
     drawPlayingScene();
     ui.drawPauseOverlay(ctx);
 }
 
-function updateRoundEnd() {
-    if (input.confirm()) {
-        if (currentRound + 1 >= TOTAL_ROUNDS) {
-            state = STATE.GAME_OVER;
-        } else {
-            setupPlayers();
-            resources.nodes = [];
-            startRound(currentRound + 1);
-        }
-        return;
+function updateShowerWarning(dt) {
+    showerWarningTimer -= dt;
+
+    // Siren sound every 1.5s during countdown
+    warningSirenTimer -= dt;
+    if (warningSirenTimer <= 0) {
+        audio.playShowerSiren();
+        warningSirenTimer = 1500;
     }
+    // Tick beep every 500ms in last 3 seconds
+    if (showerWarningTimer < 3000 && Math.floor(showerWarningTimer / 500) !== Math.floor((showerWarningTimer + dt) / 500)) {
+        audio.playWarningTick();
+    }
+
+    // Update players and resources so game stays animated during warning
+    for (const p of players) {
+        const isP1 = (p === player1);
+        const movement = isP1 ? input.getP1Movement() : input.getP2Movement();
+        p.update(dt, movement, world, camera, particles);
+    }
+    resources.update(dt);
+
+    drawPlayingScene();
+    ui.drawShowerWarning(ctx, showerWarningTimer, progression.showerCount + 1, TOTAL_SHOWERS, gameTime);
+    if (showerWarningTimer <= 0) {
+        state = STATE.SHOWER_ACTIVE;
+        // Shorter, more intense shower durations
+        showerActiveTimer = Math.max(4000, progression.diffSettings.showerDuration * 0.4);
+        meteorSpawnTimer = 0;
+        showerMusicStarted = false;
+    }
+}
+
+let showerActiveTimer = 0;
+let meteorSpawnTimer = 0;
+let activeMeteors = [];
+
+function updateShowerActive(dt) {
+    showerActiveTimer -= dt;
+    meteorSpawnTimer -= dt;
+
+    // Start intense music on first frame
+    if (!showerMusicStarted) {
+        audio.startShowerMusic();
+        showerMusicStarted = true;
+    }
+
+    // Update players/resources — game stays animated, players can still move
+    for (const p of players) {
+        const isP1 = (p === player1);
+        const movement = isP1 ? input.getP1Movement() : input.getP2Movement();
+        p.update(dt, movement, world, camera, particles);
+    }
+    resources.update(dt);
+
+    // Spawn meteors rapidly and chaotically
+    const baseInterval = showerActiveTimer > 0 ? (showerActiveTimer / (progression.diffSettings.meteorCount * 1.5)) : 200;
+    const spawnInterval = Math.max(100, baseInterval + randRange(-100, 100));
+    if (meteorSpawnTimer <= 0) {
+        meteorSpawnTimer = spawnInterval;
+        // Random position across all islands — more chaotic spread
+        const tx = randRange(2, 42);
+        const ty = randRange(7, 22);
+        const fallTime = randRange(600, 1200); // much faster fall
+        activeMeteors.push({
+            x: tx, y: ty,
+            timer: fallTime,
+            maxTimer: fallTime,
+        });
+    }
+
+    // Update meteors
+    for (let i = activeMeteors.length - 1; i >= 0; i--) {
+        const m = activeMeteors[i];
+        m.timer -= dt;
+        if (m.timer <= 0) {
+            // IMPACT! — explosive
+            const sc = camera.worldToScreen(m.x, m.y);
+            particles.emitMeteorExplosion(sc.x, sc.y, 30);
+            camera.shake(8, 350);
+            audio.playMeteorExplosion();
+            // Damage resource nodes near impact
+            for (const node of resources.nodes) {
+                if (dist(node.x, node.y, m.x, m.y) < 2.5) {
+                    node.hit();
+                }
+            }
+            activeMeteors.splice(i, 1);
+        }
+    }
+
+    drawPlayingScene();
+    // Draw falling meteors with bigger, more dramatic visuals
+    for (const m of activeMeteors) {
+        const sc = camera.worldToScreen(m.x, m.y);
+        const progress = 1 - (m.timer / m.maxTimer);
+        const altitude = (1 - progress) * 250;
+        const radius = 5 + progress * 12;
+        // Ground warning circle — grows and pulses
+        const pulseAlpha = 0.2 + Math.sin(progress * 20) * 0.1;
+        ctx.fillStyle = `rgba(255,30,0,${pulseAlpha + progress * 0.3})`;
+        ctx.beginPath();
+        ctx.ellipse(sc.x, sc.y, radius * 2.5, radius * 1.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Meteor body
+        const glow = Math.floor(120 - progress * 100);
+        ctx.fillStyle = `rgb(255,${glow},0)`;
+        ctx.shadowColor = '#FF4400';
+        ctx.shadowBlur = 15 + progress * 10;
+        ctx.beginPath();
+        ctx.arc(sc.x, sc.y - altitude, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Fire trail behind meteor
+        for (let t = 1; t <= 3; t++) {
+            ctx.fillStyle = `rgba(255,${100 + t * 30},0,${0.4 - t * 0.1})`;
+            ctx.beginPath();
+            ctx.arc(sc.x + randRange(-2, 2), sc.y - altitude - t * 12, radius * (0.7 - t * 0.15), 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    ui.drawShowerActive(ctx, showerActiveTimer, progression.showerCount + 1, TOTAL_SHOWERS);
+
+    if (showerActiveTimer <= 0) {
+        // Shower complete
+        activeMeteors = [];
+        progression.showerCount++;
+        progression.showerTimer = progression.diffSettings.showerInterval;
+
+        // Resume normal music
+        audio.startMusic();
+        showerMusicStarted = false;
+
+        // Erode outer islands
+        world.erodeIsland('blue', 2 + progression.showerCount);
+        world.erodeIsland('red', 2 + progression.showerCount);
+
+        if (progression.showerCount >= TOTAL_SHOWERS) {
+            // Final shower — destroy outer islands
+            world.destroyIsland('blue');
+            world.destroyIsland('red');
+            // Check win/loss
+            if (progression.defenseScore >= DEFENSE_THRESHOLD && progression.sustainScore >= SUSTAIN_THRESHOLD) {
+                state = STATE.WIN;
+            } else {
+                state = STATE.LOSS;
+            }
+            audio.stopMusic();
+        } else {
+            state = STATE.PLAYING;
+            ui.addNotification(`Shower ${progression.showerCount}/${TOTAL_SHOWERS} survived!`, '#FFD700');
+        }
+    }
+}
+
+function updateWinScreen() {
+    if (input.confirm()) { state = STATE.TITLE; return; }
     ctx.clearRect(0, 0, GAME_W, GAME_H);
-    if (roundSummary) ui.drawRoundResults(ctx, roundSummary, gameTime);
+    ui.drawWinScreen(ctx, progression, gameTime);
+}
+
+function updateLossScreen() {
+    if (input.confirm()) { state = STATE.TITLE; return; }
+    ctx.clearRect(0, 0, GAME_W, GAME_H);
+    ui.drawLossScreen(ctx, progression, gameTime);
 }
 
 function updateGameOver() {
     if (input.confirm()) { state = STATE.TITLE; return; }
     ctx.clearRect(0, 0, GAME_W, GAME_H);
-    ui.drawGameOver(ctx, roundStarsTotal, TOTAL_ROUNDS, gameTime);
+    ui.drawGameOver(ctx, 0, 0, gameTime);
 }
 
 // ---- Leap Zone Detection ----
@@ -594,7 +832,7 @@ function drawPlayingScene() {
     particles.draw(ctx);
 
     // HUD
-    ui.drawHUD(ctx, orders, players, state);
+    ui.drawHUD(ctx, progression, players, state, hubStockpile);
 
     // Per-player craft menus — drawn as half-screen overlays, game keeps running
     if (player1.craftMenuOpen) {
@@ -603,6 +841,9 @@ function drawPlayingScene() {
     if (player2.craftMenuOpen) {
         ui.drawCraftMenuForPlayer(ctx, player2, crafting, GAME_W / 2, GAME_W / 2);
     }
+
+    // Admin panel overlay
+    drawAdminPanel();
 }
 
 // Draw one viewport with a specific camera position (saves/restores camera state)
@@ -671,6 +912,55 @@ function drawSceneWithCamera(areaX, areaY, areaW, areaH, cam) {
     entities.sort((a, b) => a.y - b.y);
     for (const e of entities) e.draw();
 
+    // Ground items — small colored squares with bob
+    for (const gi of groundItems) {
+        const sc = cam.worldToScreen(gi.x, gi.y);
+        if (!cam.isOnScreen(sc.x, sc.y)) continue;
+        const z = cam.zoom;
+        const bob = Math.sin(Date.now() * 0.004 + gi.x * 3) * 3 * z;
+        const color = MAT_COLORS[gi.material] || '#FFF';
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(sc.x - 4 * z, sc.y - 8 * z + bob, 8 * z, 8 * z);
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sc.x - 4 * z, sc.y - 8 * z + bob, 8 * z, 8 * z);
+        ctx.globalAlpha = 1;
+    }
+
+    // Build checklist floating above crafter
+    const build = progression.getCurrentBuild();
+    if (build) {
+        const crafterSc = cam.worldToScreen(CRAFTER_POS.x, CRAFTER_POS.y);
+        if (cam.isOnScreen(crafterSc.x, crafterSc.y)) {
+            const z = cam.zoom;
+            const bx = crafterSc.x;
+            const by = crafterSc.y - 50 * z;
+            // Background panel
+            const panW = 160 * z;
+            const panH = 14 * z + Object.keys(build.recipe).length * 12 * z + 6 * z;
+            ctx.fillStyle = 'rgba(5,10,25,0.85)';
+            ctx.fillRect(bx - panW / 2, by - 2 * z, panW, panH);
+            ctx.strokeStyle = '#00FFAA55';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(bx - panW / 2, by - 2 * z, panW, panH);
+            // Build name
+            ctx.font = `${Math.floor(7 * z)}px "Press Start 2P"`;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#00FFAA';
+            ctx.fillText(build.name, bx, by + 8 * z);
+            // Material requirements — from hub stockpile
+            let matY = by + 20 * z;
+            ctx.font = `${Math.floor(6 * z)}px "Press Start 2P"`;
+            for (const [mat, qty] of Object.entries(build.recipe)) {
+                const have = hubStockpile[mat] || 0;
+                const done = have >= qty;
+                ctx.fillStyle = done ? '#44FF88' : '#FF6644';
+                ctx.fillText(`${MAT_NAMES[mat] || mat}: ${have}/${qty} ${done ? '✓' : ''}`, bx, matY);
+                matY += 12 * z;
+            }
+        }
+    }
     // World-space trail particles — drawn per-viewport with correct cam
     particles.drawWorldParticles(ctx, cam);
     // NOTE: screen-space particles.draw is called in drawPlayingScene
@@ -694,5 +984,76 @@ function drawMachine(spriteKey, pos, cam) {
     }
 }
 
+// ---- Admin Panel (Ctrl+Shift+K) ----
+let adminOpen = false;
+let adminSelection = 0;
+const ADMIN_ACTIONS = [
+    'Give All Materials',
+    'Skip to Next Shower',
+    'Complete Current Build',
+    'Add 60s to Shower Timer',
+];
+
+window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyK') {
+        e.preventDefault();
+        adminOpen = !adminOpen;
+        adminSelection = 0;
+    }
+    if (!adminOpen) return;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') adminSelection = Math.max(0, adminSelection - 1);
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') adminSelection = Math.min(ADMIN_ACTIONS.length - 1, adminSelection + 1);
+    if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        executeAdminAction(adminSelection);
+    }
+});
+
+function executeAdminAction(idx) {
+    const MAT = { WOOD:'wood', STONE:'stone', CRYSTAL:'crystal', ORE:'ore', COAL:'coal', FIBER:'fiber' };
+    switch (idx) {
+        case 0: // Give all materials to hub stockpile
+            for (const m of Object.values(MAT)) {
+                hubStockpile[m] = (hubStockpile[m] || 0) + 5;
+            }
+            ui.addNotification('ADMIN: Hub stockpile filled', '#FF00FF');
+            break;
+        case 1: // Skip to next shower
+            progression.showerTimer = 0;
+            ui.addNotification('ADMIN: Shower triggered', '#FF00FF');
+            break;
+        case 2: // Complete current build
+            const build = progression.getCurrentBuild();
+            if (build) {
+                progression.completed.push(progression.buildIndex);
+                progression.buildIndex++;
+                const pos = STRUCTURE_POSITIONS[(progression.totalBuilt - 1) % STRUCTURE_POSITIONS.length];
+                world.addStructureTile(pos.x, pos.y, build.name);
+                ui.addNotification(`ADMIN: Built ${build.name}`, '#FF00FF');
+            }
+            break;
+        case 3: // Add time
+            progression.showerTimer += 60000;
+            ui.addNotification('ADMIN: +60s added', '#FF00FF');
+            break;
+    }
+}
+
+function drawAdminPanel() {
+    if (!adminOpen) return;
+    ctx.fillStyle = 'rgba(80,0,80,0.85)';
+    ctx.fillRect(GAME_W - 320, 10, 310, 30 + ADMIN_ACTIONS.length * 24);
+    ctx.font = '10px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FF00FF';
+    ctx.fillText('ADMIN PANEL', GAME_W - 310, 28);
+    for (let i = 0; i < ADMIN_ACTIONS.length; i++) {
+        const y = 50 + i * 24;
+        ctx.fillStyle = i === adminSelection ? '#FF00FF' : '#AA66AA';
+        ctx.fillText(`${i === adminSelection ? '>' : ' '} ${ADMIN_ACTIONS[i]}`, GAME_W - 310, y);
+    }
+}
+
 // ---- Start ----
 init();
+
